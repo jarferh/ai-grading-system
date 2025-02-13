@@ -1,0 +1,37 @@
+/* Circular Progress Bar */
+.progress-circle {
+    width: 120px;
+    height: 120px;
+    border-radius: 50%;
+    background: conic-gradient(#007bff 0%, #e9ecef 0%);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin: 0 auto;
+    position: relative;
+    border: 5px solid #007bff; /* Add a border */
+}
+
+.progress-circle-value {
+    font-size: 24px;
+    font-weight: bold;
+    color: #007bff;
+    position: absolute; /* Position the percentage inside the circle */
+}
+
+.progress-circle::before {
+    content: '';
+    position: absolute;
+    width: 90%;
+    height: 90%;
+    border-radius: 50%;
+    background: white;
+}
+
+/* Grade Text */
+.grade-text {
+    font-size: 2.5rem; /* Larger text */
+    font-weight: bold; /* Bolder text */
+    color: #007bff; /* Blue color */
+    margin: 0;
+}
