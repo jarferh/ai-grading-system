@@ -5,40 +5,60 @@ include '../includes/auth.php';
 
 requireStudent();
 
+// Set security headers
 header('Content-Type: application/json');
+header('X-Content-Type-Options: nosniff');
+header('X-Frame-Options: DENY');
+header('X-XSS-Protection: 1; mode=block');
+header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
 
-$assignment_id = $_POST['assignment_id'];
-$student_id = $_POST['student_id'];
-$content = $_POST['content'];
+// Configuration
+$CURRENT_UTC_DATETIME = '2025-02-20 17:18:17';
+$CURRENT_USER_LOGIN = 'jarferh';
+$MAX_API_RETRIES = 3;
+$API_KEY = "AIzaSyDsEJyQgh_XMGQsOv3CndiDWvcw3W8OHms";
 
-// Check if the student has already submitted this assignment
-$stmt = $conn->prepare("SELECT id FROM submissions WHERE student_id = :student_id AND assignment_id = :assignment_id");
-$stmt->execute([
-    'student_id' => $student_id,
-    'assignment_id' => $assignment_id
-]);
-$existingSubmission = $stmt->fetch(PDO::FETCH_ASSOC);
+// Input validation
+$student_id = $_SESSION['user_id'] ?? 0;
+$assignment_id = filter_input(INPUT_POST, 'assignment_id', FILTER_VALIDATE_INT);
+$content = trim($_POST['content'] ?? '');
 
-if ($existingSubmission) {
+// Debug logging
+error_log("Received request - Student ID: $student_id, Assignment ID: $assignment_id");
+
+// Validate required inputs
+if (!$student_id || !$assignment_id || empty($content)) {
     echo json_encode([
         'success' => false,
-        'error' => 'You have already submitted this assignment.'
+        'error' => 'Missing or invalid required parameters.',
+        'timestamp' => $CURRENT_UTC_DATETIME,
+        'debug' => [
+            'student_id' => $student_id,
+            'assignment_id' => $assignment_id,
+            'content_length' => strlen($content)
+        ]
     ]);
     exit();
 }
 
-// Fetch assignment question
-$stmt = $conn->prepare("SELECT description FROM assignments WHERE id = :assignment_id");
-$stmt->execute(['assignment_id' => $assignment_id]);
-$assignment = $stmt->fetch(PDO::FETCH_ASSOC);
-$question = $assignment['description'];
+// Function to log events
+function logEvent($type, $message, $data = []) {
+    global $CURRENT_UTC_DATETIME, $CURRENT_USER_LOGIN;
+    error_log(sprintf(
+        "[%s] [%s] [%s] %s - %s",
+        $CURRENT_UTC_DATETIME,
+        $CURRENT_USER_LOGIN,
+        $type,
+        $message,
+        json_encode($data)
+    ));
+}
 
-// Call the Gemini API to generate feedback and score
-function callGeminiAPI($prompt) {
-    $apiKey = "AIzaSyDsEJyQgh_XMGQsOv3CndiDWvcw3W8OHms"; // Replace with your Gemini API key
-    $url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=$apiKey";
+// Function to call Gemini API
+function callGeminiAPI($prompt, $maxRetries) {
+    global $API_KEY;
+    $url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=$API_KEY";
 
-    // Prepare the request payload
     $data = [
         "contents" => [
             [
@@ -49,126 +69,187 @@ function callGeminiAPI($prompt) {
         ]
     ];
 
-    // Initialize cURL
-    $ch = curl_init($url);
-    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-    curl_setopt($ch, CURLOPT_HTTPHEADER, [
-        'Content-Type: application/json'
-    ]);
-    curl_setopt($ch, CURLOPT_POST, true);
-    curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($data));
+    $attempt = 0;
+    while ($attempt < $maxRetries) {
+        $ch = curl_init($url);
+        curl_setopt_array($ch, [
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_HTTPHEADER => ['Content-Type: application/json'],
+            CURLOPT_POST => true,
+            CURLOPT_POSTFIELDS => json_encode($data),
+            CURLOPT_TIMEOUT => 30,
+            CURLOPT_CONNECTTIMEOUT => 10,
+            CURLOPT_SSL_VERIFYPEER => true
+        ]);
 
-    // Execute the request
-    $response = curl_exec($ch);
+        $response = curl_exec($ch);
+        $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        $curlError = curl_error($ch);
+        curl_close($ch);
 
-    // Check for errors
-    if (curl_errno($ch)) {
-        throw new Exception("cURL Error: " . curl_error($ch));
+        if ($httpCode === 200 && $response) {
+            return json_decode($response, true);
+        }
+
+        $attempt++;
+        if ($attempt < $maxRetries) {
+            sleep(1);
+        }
     }
 
-    // Close cURL
-    curl_close($ch);
-
-    // Decode the response
-    return json_decode($response, true);
+    throw new Exception("API call failed after $maxRetries attempts. HTTP Code: $httpCode. Error: $curlError");
 }
 
 try {
-    // Generate the prompt for the Gemini API
-    $prompt = "You are an automated grading assistant. Grade the following student answer based on the given question and provide a short and constructive feedback to the student on wht to improve.\n\n" .
-              "Question:\n" . $question . "\n\n" .
-              "Student Answer:\n" . $content . "\n\n" .
-              "Please evaluate the answer based on:\n" .
-              "NOTE : the complete mark is 100% here is how the mark should be allocated(10% is for attendance(every student must have) , 10% is for grammer clearity , 70% is the accuracy of the answer to the question , 10% is for originality)".
-              "1. Understanding of the topic\n" .
-              "2. Completeness of the response\n" .
-              "3. Accuracy of information\n" .
-              "4. Clarity and organization\n\n" .
-              "Respond in the exact following plain text format without any markdown or additional annotations:\n\n" .
-              "Grade: [0-100]\nFeedback: [Your detailed feedback here]";
-
-    // Call the Gemini API
-    $response = callGeminiAPI($prompt);
-
-    // Log the raw response for debugging
-    error_log("Gemini API Response: " . print_r($response, true));
-
-    // Extract the generated text
-    $generatedText = $response['candidates'][0]['content']['parts'][0]['text'] ?? null;
-
-    if (!$generatedText) {
-        throw new Exception("No feedback generated by the Gemini API.");
-    }
-
-    // Parse the grade and feedback from the response
-    $grade = 0;
-    $feedback = "No feedback available.";
-
-    // Extract the grade
-    if (preg_match("/Grade:\s*(\d+)/i", $generatedText, $gradeMatches)) {
-        $grade = (int)$gradeMatches[1];
-    } else {
-        // If grade is not found, assume the entire response is feedback
-        $feedback = $generatedText;
-        throw new Exception("Grade not found in the response. Only feedback was generated.");
-    }
-
-    // Extract the feedback
-    if (preg_match("/Feedback:\s*(.+)/is", $generatedText, $feedbackMatches)) {
-        $feedback = trim($feedbackMatches[1]);
-    } else {
-        // If feedback is not found, use the entire response as feedback
-        $feedback = $generatedText;
-    }
-
-    // Start a database transaction
+    // Start transaction
     $conn->beginTransaction();
 
-    // Insert submission into the database
-    $stmt = $conn->prepare("INSERT INTO submissions (student_id, assignment_id, content, submission_date) VALUES (:student_id, :assignment_id, :content, NOW())");
+    // Check if assignment exists and is accessible to the student
+    $stmt = $conn->prepare("
+        SELECT a.*, s.name as subject_name 
+        FROM assignments a
+        JOIN subjects s ON a.subject_id = s.id
+        JOIN users u ON u.class_id = a.class_id
+        WHERE a.id = :assignment_id 
+        AND u.id = :student_id
+    ");
+    
+    $stmt->execute([
+        'assignment_id' => $assignment_id,
+        'student_id' => $student_id
+    ]);
+    
+    $assignment = $stmt->fetch(PDO::FETCH_ASSOC);
+
+    // Debug logging
+    error_log("Assignment query result: " . json_encode($assignment));
+
+    if (!$assignment) {
+        throw new Exception('Assignment not found or not accessible to this student.');
+    }
+
+    // Check due date
+    if (strtotime($CURRENT_UTC_DATETIME) > strtotime($assignment['due_date'])) {
+        throw new Exception('This assignment is past its due date.');
+    }
+
+    // Check for existing submission
+    $stmt = $conn->prepare("
+        SELECT id FROM submissions 
+        WHERE student_id = :student_id 
+        AND assignment_id = :assignment_id
+    ");
+    $stmt->execute([
+        'student_id' => $student_id,
+        'assignment_id' => $assignment_id
+    ]);
+
+    if ($stmt->fetch()) {
+        throw new Exception('You have already submitted this assignment.');
+    }
+
+    // Prepare grading prompt
+    $prompt = "You are an automated grading assistant. Grade the following student answer based on the given question and provide specific, constructive feedback.\n\n" .
+             "Subject: {$assignment['subject_name']}\n" .
+             "Question: {$assignment['description']}\n\n" .
+             "Student Answer: {$content}\n\n" .
+             "Grade based on these criteria (Total 100%):\n" .
+             "- Attendance: 10% (automatically awarded)\n" .
+             "- Grammar & Clarity: 10%\n" .
+             "- Answer Accuracy: 70%\n" .
+             "- Originality: 10%\n\n" .
+             "Provide response in this format exactly:\n" .
+             "Grade: [0-100]\n" .
+             "Feedback: [Specific feedback with suggestions for improvement]";
+
+    // Call API and process response
+    $response = callGeminiAPI($prompt, $MAX_API_RETRIES);
+    
+    if (!isset($response['candidates'][0]['content']['parts'][0]['text'])) {
+        throw new Exception('Invalid API response format.');
+    }
+
+    $generatedText = $response['candidates'][0]['content']['parts'][0]['text'];
+
+    // Parse grade and feedback
+    preg_match("/Grade:\s*(\d+)/i", $generatedText, $gradeMatches);
+    preg_match("/Feedback:\s*(.+?)(?=\n|$)/is", $generatedText, $feedbackMatches);
+
+    if (!isset($gradeMatches[1])) {
+        throw new Exception('Could not extract grade from API response.');
+    }
+
+    $grade = min(100, max(0, intval($gradeMatches[1])));
+    $feedback = $feedbackMatches[1] ?? 'No specific feedback provided.';
+
+    // Insert submission
+    $stmt = $conn->prepare("
+        INSERT INTO submissions (student_id, assignment_id, content, submission_date) 
+        VALUES (:student_id, :assignment_id, :content, :submission_date)
+    ");
     $stmt->execute([
         'student_id' => $student_id,
         'assignment_id' => $assignment_id,
-        'content' => $content
+        'content' => $content,
+        'submission_date' => $CURRENT_UTC_DATETIME
     ]);
-
-    // Get the submission ID
+    
     $submission_id = $conn->lastInsertId();
 
-    // Insert the grade into the database
-    $stmt = $conn->prepare("INSERT INTO grades (submission_id, score, remarks) VALUES (:submission_id, :score, :remarks)");
+    // Insert grade
+    $stmt = $conn->prepare("
+        INSERT INTO grades (submission_id, score, remarks) 
+        VALUES (:submission_id, :score, :remarks)
+    ");
     $stmt->execute([
         'submission_id' => $submission_id,
         'score' => $grade,
         'remarks' => $feedback
     ]);
 
-    // Commit the transaction
+    // Commit transaction
     $conn->commit();
 
-    // Calculate percentage
-    $percentage = $grade;
+    // Log successful submission
+    logEvent('SUBMISSION', 'Assignment submitted successfully', [
+        'assignment_id' => $assignment_id,
+        'student_id' => $student_id,
+        'grade' => $grade
+    ]);
 
-    // Return results as JSON
+    // Return success response
     echo json_encode([
         'success' => true,
         'score' => $grade,
-        'percentage' => $percentage,
-        'feedback' => $feedback
+        'percentage' => $grade,
+        'feedback' => $feedback,
+        'submission_id' => $submission_id,
+        'timestamp' => $CURRENT_UTC_DATETIME
     ]);
+
 } catch (Exception $e) {
-    // Rollback the transaction if an error occurs
-    if (isset($conn) && $conn->inTransaction()) {
+    // Rollback transaction if active
+    if ($conn && $conn->inTransaction()) {
         $conn->rollBack();
     }
 
-    // Log the error
-    error_log("Error: " . $e->getMessage());
+    // Log error
+    logEvent('ERROR', $e->getMessage(), [
+        'assignment_id' => $assignment_id,
+        'student_id' => $student_id,
+        'file' => $e->getFile(),
+        'line' => $e->getLine()
+    ]);
 
-    // Return error as JSON
+    // Return error response
     echo json_encode([
         'success' => false,
-        'error' => $e->getMessage()
+        'error' => $e->getMessage(),
+        'timestamp' => $CURRENT_UTC_DATETIME,
+        'debug' => [
+            'student_id' => $student_id,
+            'assignment_id' => $assignment_id
+        ]
     ]);
 }
 ?>
