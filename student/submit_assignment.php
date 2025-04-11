@@ -10,7 +10,7 @@ include '../includes/header.php';
 
 $assignment_id = $_GET['id'] ?? 0;
 $student_id = $_SESSION['user_id'];
-$current_datetime = '2025-02-20 17:09:21';
+$current_datetime = '2025-04-08 22:32:20';
 
 // Fetch assignment details with teacher name
 $stmt = $conn->prepare("
@@ -19,6 +19,7 @@ $stmt = $conn->prepare("
         a.title, 
         a.description, 
         a.due_date, 
+        a.total_marks,
         s.name AS subject_name,
         u.full_name AS teacher_name
     FROM assignments a
@@ -41,29 +42,44 @@ $is_past_due = strtotime($current_datetime) > strtotime($assignment['due_date'])
     <div class="container-fluid">
         <!-- Page Header -->
         <div class="row mb-4">
-            <div class="col-md-12">
-                <div class="card bg-gradient-info">
-                    <div class="card-body">
-                        <div class="d-flex justify-content-between align-items-center">
-                            <div>
-                                <h5 class="card-title mb-0"><?= htmlspecialchars($assignment['title']) ?></h5>
-                                <small class="text-white">
-                                    <i class="fas fa-book mr-1"></i> <?= htmlspecialchars($assignment['subject_name']) ?> | 
-                                    <i class="fas fa-user mr-1"></i> <?= htmlspecialchars($assignment['teacher_name']) ?>
-                                </small>
-                            </div>
-                            <div class="text-right">
-                                <h6 class="mb-0">Due Date:</h6>
-                                <span class="badge <?= $is_past_due ? 'badge-danger' : 'badge-light' ?>">
-                                    <i class="far fa-clock mr-1"></i>
-                                    <?= date('M d, Y H:i', strtotime($assignment['due_date'])) ?>
-                                </span>
-                            </div>
+    <div class="col-md-12">
+        <div class="card border-0 shadow-sm">
+            <div class="card-body p-4">
+                <div class="d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-3">
+                    <!-- Assignment Title and Meta Info -->
+                    <div>
+                        <h5 class="card-title h4 text-primary m-3">
+                            <?= htmlspecialchars($assignment['title']) ?>
+                        </h5>
+                        <div class="d-flex flex-column flex-md-row text-muted small">
+                            <span class="d-flex align-items-center m-3">
+                                <i class="fas fa-book me-2"></i>
+                                <?= htmlspecialchars($assignment['subject_name']) ?>
+                            </span>
+                            <span class="d-flex align-items-center">
+                                <i class="fas fa-user me-2"></i>
+                                <?= htmlspecialchars($assignment['teacher_name']) ?>
+                            </span>
+                        </div>
+                    </div>
+
+                    <!-- Due Date -->
+                    <div class="text-md-end mt-3 mt-md-0">
+                        <div class="small text-muted mb-2">Due Date</div>
+                        <div class="<?= $is_past_due ? 'text-danger' : 'text-dark' ?> fw-medium">
+                            <i class="far fa-clock me-2"></i>
+                            <?= date('M d, Y', strtotime($assignment['due_date'])) ?>
+                            <br class="d-md-none">
+                            <span class="small ms-md-2">
+                                <?= date('H:i', strtotime($assignment['due_date'])) ?> UTC
+                            </span>
                         </div>
                     </div>
                 </div>
             </div>
         </div>
+    </div>
+</div>
 
         <div class="row">
             <!-- Assignment Details -->
@@ -101,6 +117,18 @@ $is_past_due = strtotime($current_datetime) > strtotime($assignment['due_date'])
                                                 echo "<span class='text-danger'>Past due date</span>";
                                             }
                                             ?>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div>
+                                    <i class="fas fa-star bg-warning"></i>
+                                    <div class="timeline-item">
+                                        <h3 class="timeline-header">Total Marks</h3>
+                                        <div class="timeline-body">
+                                            <span class="badge badge-info">
+                                                <i class="fas fa-trophy mr-1"></i>
+                                                <?= number_format($assignment['total_marks'], 2) ?> marks
+                                            </span>
                                         </div>
                                     </div>
                                 </div>
@@ -183,32 +211,6 @@ $is_past_due = strtotime($current_datetime) > strtotime($assignment['due_date'])
 
                         <!-- Results Section -->
                         <div id="assignmentResult" class="mt-4" style="display: none;">
-                            <div class="card bg-gradient-success">
-                                <div class="card-body">
-                                    <div class="row align-items-center">
-                                        <div class="col-md-4 text-center">
-                                            <div class="grade-circle position-relative">
-                                                <div class="progress-circle">
-                                                    <span class="progress-circle-value">0%</span>
-                                                </div>
-                                            </div>
-                                        </div>
-                                        <div class="col-md-8">
-                                            <h4 class="text-white mb-3">
-                                                <i class="fas fa-award mr-2"></i>
-                                                Your Grade
-                                            </h4>
-                                            <div class="feedback-box bg-white p-3 rounded">
-                                                <h5 class="text-dark">
-                                                    <i class="fas fa-comment-alt mr-2"></i>
-                                                    Feedback:
-                                                </h5>
-                                                <p id="feedbackResult" class="text-dark mb-0"></p>
-                                            </div>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
                         </div>
                     </div>
                 </div>
@@ -301,8 +303,9 @@ $is_past_due = strtotime($current_datetime) > strtotime($assignment['due_date'])
     overflow-y: auto;
 }
 </style>
+
 <script>
-    document.getElementById('submitAssignmentForm').addEventListener('submit', function(e) {
+document.getElementById('submitAssignmentForm').addEventListener('submit', function(e) {
     e.preventDefault();
     
     // Show the marking animation
@@ -311,7 +314,7 @@ $is_past_due = strtotime($current_datetime) > strtotime($assignment['due_date'])
     
     // Get form data
     const formData = new FormData();
-    formData.append('assignment_id', <?= $assignment_id ?>); // Make sure this is set
+    formData.append('assignment_id', <?= $assignment_id ?>);
     formData.append('content', document.getElementById('content').value);
     
     // Send AJAX request
@@ -325,19 +328,48 @@ $is_past_due = strtotime($current_datetime) > strtotime($assignment['due_date'])
         document.getElementById('markingAnimation').style.display = 'none';
         
         if (data.success) {
-            // Update the circular progress bar
-            const progressCircle = document.querySelector('.progress-circle');
-            const progressValue = document.querySelector('.progress-circle-value');
-            const percentage = data.percentage || 0;
-            
-            progressCircle.style.background = `conic-gradient(#28a745 ${percentage}%, #e9ecef ${percentage}%)`;
-            progressValue.textContent = `${percentage}%`;
-            
-            // Update feedback
-            document.getElementById('feedbackResult').textContent = data.feedback;
+            // Update the results section
+            document.getElementById('assignmentResult').innerHTML = `
+                <div class="card bg-gradient-success">
+                    <div class="card-body">
+                        <div class="row align-items-center">
+                            <div class="col-md-4 text-center">
+                                <div class="grade-circle position-relative">
+                                    <div class="progress-circle">
+                                        <span class="progress-circle-value">${data.percentage}%</span>
+                                    </div>
+                                </div>
+                                <div class="mt-2">
+                                    <span class="badge badge-light">
+                                        <i class="fas fa-star mr-1"></i>
+                                        ${data.achieved_marks.toFixed(2)} / ${data.total_marks.toFixed(2)} marks
+                                    </span>
+                                </div>
+                            </div>
+                            <div class="col-md-8">
+                                <h4 class="text-white mb-3">
+                                    <i class="fas fa-award mr-2"></i>
+                                    Your Grade
+                                </h4>
+                                <div class="feedback-box bg-white p-3 rounded">
+                                    <h5 class="text-dark">
+                                        <i class="fas fa-comment-alt mr-2"></i>
+                                        Feedback:
+                                    </h5>
+                                    <p id="feedbackResult" class="text-dark mb-0">${data.feedback}</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `;
             
             // Show results
             document.getElementById('assignmentResult').style.display = 'block';
+            
+            // Update the circular progress
+            const progressCircle = document.querySelector('.progress-circle');
+            progressCircle.style.background = `conic-gradient(#28a745 ${data.percentage}%, #e9ecef ${data.percentage}%)`;
         } else {
             alert(data.error || 'An error occurred while submitting your assignment.');
         }

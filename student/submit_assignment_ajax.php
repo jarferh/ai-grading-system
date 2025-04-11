@@ -13,10 +13,10 @@ header('X-XSS-Protection: 1; mode=block');
 header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
 
 // Configuration
-$CURRENT_UTC_DATETIME = '2025-02-20 17:18:17';
+$CURRENT_UTC_DATETIME = '2025-04-08 22:32:20';
 $CURRENT_USER_LOGIN = 'jarferh';
 $MAX_API_RETRIES = 3;
-$API_KEY = "AIzaSyDsEJyQgh_XMGQsOv3CndiDWvcw3W8OHms";
+$API_KEY = "AIzaSyAFcX82QTK-z8AfHpzc4Z0dlMD7CtpLEZY";
 
 // Input validation
 $student_id = $_SESSION['user_id'] ?? 0;
@@ -42,7 +42,8 @@ if (!$student_id || !$assignment_id || empty($content)) {
 }
 
 // Function to log events
-function logEvent($type, $message, $data = []) {
+function logEvent($type, $message, $data = [])
+{
     global $CURRENT_UTC_DATETIME, $CURRENT_USER_LOGIN;
     error_log(sprintf(
         "[%s] [%s] [%s] %s - %s",
@@ -55,7 +56,8 @@ function logEvent($type, $message, $data = []) {
 }
 
 // Function to call Gemini API
-function callGeminiAPI($prompt, $maxRetries) {
+function callGeminiAPI($prompt, $maxRetries)
+{
     global $API_KEY;
     $url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=$API_KEY";
 
@@ -113,12 +115,12 @@ try {
         WHERE a.id = :assignment_id 
         AND u.id = :student_id
     ");
-    
+
     $stmt->execute([
         'assignment_id' => $assignment_id,
         'student_id' => $student_id
     ]);
-    
+
     $assignment = $stmt->fetch(PDO::FETCH_ASSOC);
 
     // Debug logging
@@ -149,22 +151,41 @@ try {
     }
 
     // Prepare grading prompt
-    $prompt = "You are an automated grading assistant. Grade the following student answer based on the given question and provide specific, constructive feedback.\n\n" .
-             "Subject: {$assignment['subject_name']}\n" .
-             "Question: {$assignment['description']}\n\n" .
-             "Student Answer: {$content}\n\n" .
-             "Grade based on these criteria (Total 100%):\n" .
-             "- Attendance: 10% (automatically awarded)\n" .
-             "- Grammar & Clarity: 10%\n" .
-             "- Answer Accuracy: 70%\n" .
-             "- Originality: 10%\n\n" .
-             "Provide response in this format exactly:\n" .
-             "Grade: [0-100]\n" .
-             "Feedback: [Specific feedback with suggestions for improvement]";
+    $prompt = <<<EOT
+You are an AI grading assistant. Evaluate the following student answer strictly and provide concise, actionable feedback.
+
+Subject: {$assignment['subject_name']}
+Question: {$assignment['description']}
+Student Answer: {$content}
+
+Grading Criteria (Total: 100%):
+1. Attendance (10%): Automatically awarded
+2. Grammar & Clarity (10%):
+   - Correct grammar and punctuation (5%)
+   - Clear and concise expression (5%)
+3. Answer Accuracy (70%):
+   - Correctness of solution/response (50%)
+   - Completeness of answer (20%)
+4. Originality (10%):
+   - Unique approach or insight (5%)
+   - Evidence of independent thinking (5%)
+
+Instructions:
+- Grade each criterion independently
+- Round the final grade to the nearest whole number
+- Provide brief, specific feedback focusing on:
+  * What was done well
+  * Key areas for improvement
+  * One specific suggestion to improve the answer
+
+Response Format (use exactly):
+Grade: [0-100]
+Feedback: [Strong points] [Areas to improve] [One specific suggestion]
+EOT;
 
     // Call API and process response
     $response = callGeminiAPI($prompt, $MAX_API_RETRIES);
-    
+
     if (!isset($response['candidates'][0]['content']['parts'][0]['text'])) {
         throw new Exception('Invalid API response format.');
     }
@@ -172,14 +193,16 @@ try {
     $generatedText = $response['candidates'][0]['content']['parts'][0]['text'];
 
     // Parse grade and feedback
-    preg_match("/Grade:\s*(\d+)/i", $generatedText, $gradeMatches);
-    preg_match("/Feedback:\s*(.+?)(?=\n|$)/is", $generatedText, $feedbackMatches);
+    preg_match("/Grade:\\s*(\\d+)/i", $generatedText, $gradeMatches);
+    preg_match("/Feedback:\\s*(.+?)(?=\\n|$)/is", $generatedText, $feedbackMatches);
 
     if (!isset($gradeMatches[1])) {
         throw new Exception('Could not extract grade from API response.');
     }
 
-    $grade = min(100, max(0, intval($gradeMatches[1])));
+    $percentage = min(100, max(0, intval($gradeMatches[1])));
+    // Calculate actual marks based on assignment's total marks
+    $achieved_marks = ($percentage / 100) * $assignment['total_marks'];
     $feedback = $feedbackMatches[1] ?? 'No specific feedback provided.';
 
     // Insert submission
@@ -193,18 +216,20 @@ try {
         'content' => $content,
         'submission_date' => $CURRENT_UTC_DATETIME
     ]);
-    
+
     $submission_id = $conn->lastInsertId();
 
     // Insert grade
     $stmt = $conn->prepare("
-        INSERT INTO grades (submission_id, score, remarks) 
-        VALUES (:submission_id, :score, :remarks)
+        INSERT INTO grades (submission_id, score, remarks, percentage, achieved_marks) 
+        VALUES (:submission_id, :score, :remarks, :percentage, :achieved_marks)
     ");
     $stmt->execute([
         'submission_id' => $submission_id,
-        'score' => $grade,
-        'remarks' => $feedback
+        'score' => $percentage,
+        'remarks' => $feedback,
+        'percentage' => $percentage,
+        'achieved_marks' => $achieved_marks
     ]);
 
     // Commit transaction
@@ -214,19 +239,21 @@ try {
     logEvent('SUBMISSION', 'Assignment submitted successfully', [
         'assignment_id' => $assignment_id,
         'student_id' => $student_id,
-        'grade' => $grade
+        'grade' => $percentage,
+        'achieved_marks' => $achieved_marks
     ]);
 
     // Return success response
     echo json_encode([
         'success' => true,
-        'score' => $grade,
-        'percentage' => $grade,
+        'score' => (int)$percentage,
+        'percentage' => (int)$percentage,
+        'achieved_marks' => (float)$achieved_marks,
+        'total_marks' => (float)$assignment['total_marks'],
         'feedback' => $feedback,
-        'submission_id' => $submission_id,
+        'submission_id' => (int)$submission_id,
         'timestamp' => $CURRENT_UTC_DATETIME
     ]);
-
 } catch (Exception $e) {
     // Rollback transaction if active
     if ($conn && $conn->inTransaction()) {
@@ -252,4 +279,3 @@ try {
         ]
     ]);
 }
-?>
