@@ -137,7 +137,7 @@ $userInitial = strtoupper(substr($_SESSION['full_name'] ?? 'U', 0, 1));
         <!-- Navbar -->
         <nav class="main-header navbar navbar-expand navbar-white navbar-light">
             <!-- Left navbar links -->
-            <!-- <ul class="navbar-nav">
+            <ul class="navbar-nav">
                 <li class="nav-item">
                     <a class="nav-link" data-widget="pushmenu" href="#" role="button">
                         <i class="fas fa-bars"></i>
@@ -155,7 +155,7 @@ $userInitial = strtoupper(substr($_SESSION['full_name'] ?? 'U', 0, 1));
                         </a>
                     </li>
                 <?php endif; ?>
-            </ul> -->
+            </ul>
 
             <!-- Right navbar links -->
             <ul class="navbar-nav ml-auto">

@@ -104,6 +104,38 @@ include '../includes/header.php';
 
 <section class="content">
     <div class="container-fluid">
+        <!-- Scoresheet Generation Button (Initially Hidden) -->
+        <div id="generateScoresheet" style="display: none;" class="mb-3">
+            <button type="button" class="btn btn-success" data-toggle="modal" data-target="#scoresheetModal">
+                <i class="fas fa-file-excel mr-2"></i>Generate Combined Scoresheet
+            </button>
+        </div>
+
+        <!-- Scoresheet Modal -->
+        <div class="modal fade" id="scoresheetModal" tabindex="-1">
+            <div class="modal-dialog">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h5 class="modal-title">Generate Combined Scoresheet</h5>
+                        <button type="button" class="close" data-dismiss="modal">
+                            <span>&times;</span>
+                        </button>
+                    </div>
+                    <div class="modal-body">
+                        <div class="form-group">
+                            <label>Total Marks for Combined Scoresheet</label>
+                            <input type="number" class="form-control" id="totalScoreMarks" value="100">
+                            <small class="text-muted">Selected assignments will be weighted equally to sum up to this total.</small>
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" data-dismiss="modal">Cancel</button>
+                        <button type="button" class="btn btn-primary" onclick="generateCombinedScoresheet()">Generate</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
         <!-- Filters Card -->
         <div class="card card-outline card-primary mb-4">
             <div class="card-header">
@@ -111,11 +143,6 @@ include '../includes/header.php';
                     <i class="fas fa-filter mr-2"></i>
                     Filter Reports
                 </h3>
-                <!-- <div class="card-tools">
-                    <a href="generate_scoresheet.php" class="btn btn-success btn-sm">
-                        <i class="fas fa-file-alt mr-2"></i>Generate Scoresheet
-                    </a>
-                </div> -->
             </div>
             <div class="card-body">
                 <form method="GET" class="row">
@@ -175,6 +202,9 @@ include '../includes/header.php';
                     <table id="assignmentsTable" class="table table-bordered table-hover">
                         <thead>
                             <tr>
+                                <th>
+                                    <input type="checkbox" id="selectAll" onclick="toggleAllAssignments()">
+                                </th>
                                 <th>Title</th>
                                 <th>Class</th>
                                 <th>Subject</th>
@@ -187,6 +217,13 @@ include '../includes/header.php';
                         <tbody>
                             <?php foreach ($reports as $assignment): ?>
                                 <tr>
+                                    <td>
+                                        <input type="checkbox" class="assignment-select" 
+                                               value="<?= $assignment['id'] ?>" 
+                                               data-title="<?= htmlspecialchars($assignment['title']) ?>"
+                                               data-total="<?= $assignment['total_marks'] ?>"
+                                               onchange="checkSelectedAssignments()">
+                                    </td>
                                     <td><?= htmlspecialchars($assignment['title']) ?></td>
                                     <td><?= htmlspecialchars($assignment['class_name']) ?></td>
                                     <td><?= htmlspecialchars($assignment['subject_name']) ?></td>
@@ -261,6 +298,15 @@ include '../includes/header.php';
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 
 <script>
+    // Add this function at the start of your script section
+    function getScoreClass(score) {
+        score = parseFloat(score);
+        if (score >= 90) return 'success';
+        if (score >= 80) return 'info';
+        if (score >= 70) return 'warning';
+        return 'danger';
+    }
+
     $(document).ready(function() {
         // Initialize Select2
         $('.select2').select2({
@@ -283,13 +329,129 @@ include '../includes/header.php';
         }
     });
 
-    // Add this function before using it in viewSubmissions
-    function getScoreClass(score) {
-        score = parseFloat(score);
-        if (score >= 90) return 'success';
-        if (score >= 80) return 'info';
-        if (score >= 70) return 'warning';
-        return 'danger';
+    function toggleAllAssignments() {
+        const checkboxes = document.getElementsByClassName('assignment-select');
+        const selectAll = document.getElementById('selectAll');
+        Array.from(checkboxes).forEach(checkbox => checkbox.checked = selectAll.checked);
+        checkSelectedAssignments();
+    }
+
+    function checkSelectedAssignments() {
+        const selected = document.querySelectorAll('.assignment-select:checked');
+        const generateBtn = document.getElementById('generateScoresheet');
+        generateBtn.style.display = selected.length > 0 ? 'block' : 'none';
+    }
+
+    function generateCombinedScoresheet() {
+        const selected = document.querySelectorAll('.assignment-select:checked');
+        const totalMarks = parseFloat(document.getElementById('totalScoreMarks').value);
+        const assignmentIds = Array.from(selected).map(cb => cb.value);
+        const weightPerAssignment = totalMarks / selected.length;
+
+        Promise.all(assignmentIds.map(id => 
+            fetch(`ajax/get_submissions.php?assignment_id=${id}`)
+                .then(res => res.json())
+        )).then(responses => {
+            const studentScores = {};
+            const assignmentTitles = [];
+
+            responses.forEach((response, index) => {
+                if (!response.success) return;
+                assignmentTitles.push(response.assignment.title);
+
+                response.students.forEach(student => {
+                    if (!studentScores[student.full_name]) {
+                        studentScores[student.full_name] = {
+                            scores: new Array(selected.length).fill(0),
+                            total: 0
+                        };
+                    }
+                    
+                    // Calculate weighted score and round to nearest whole number
+                    const score = student.score || 0;
+                    const maxScore = response.assignment.total_marks;
+                    const weightedScore = Math.round((score / maxScore) * weightPerAssignment);
+                    
+                    studentScores[student.full_name].scores[index] = weightedScore;
+                    studentScores[student.full_name].total += weightedScore;
+                });
+            });
+
+            generateCombinedPDF(studentScores, assignmentTitles, totalMarks);
+            $('#scoresheetModal').modal('hide');
+        });
+    }
+
+    function generateCombinedPDF(studentScores, assignmentTitles, totalMarks) {
+        const { jsPDF } = window.jspdf;
+        const doc = new jsPDF();
+        
+        // Set up PDF
+        doc.setFontSize(16);
+        doc.text('Combined Scoresheet', 14, 15);
+        
+        doc.setFontSize(10);
+        doc.text('Generated on: ' + new Date().toLocaleString(), 14, 22);
+        
+        // Calculate column widths
+        const startX = 14;
+        const startY = 35;
+        const nameWidth = 60;
+        const scoreWidth = 25;
+        const totalWidth = 30;
+        const rowHeight = 8;
+        
+        // Draw headers
+        doc.setFontSize(11);
+        let currentX = startX;
+        
+        // Name column
+        doc.rect(currentX, startY - 5, nameWidth, rowHeight);
+        doc.text('Student Name', currentX + 2, startY);
+        currentX += nameWidth;
+        
+        // Assignment columns
+        assignmentTitles.forEach((title, index) => {
+            doc.rect(currentX, startY - 5, scoreWidth, rowHeight);
+            doc.text(`A ${index + 1}`, currentX + 2, startY);
+            currentX += scoreWidth;
+        });
+        
+        // Total column
+        doc.rect(currentX, startY - 5, totalWidth, rowHeight);
+        doc.text('Total', currentX + 2, startY);
+        
+        // Add data rows
+        let currentY = startY + rowHeight;
+        
+        Object.entries(studentScores).forEach(([name, data]) => {
+            if (currentY > 280) {
+                doc.addPage();
+                currentY = 20;
+            }
+            
+            currentX = startX;
+            
+            // Name
+            doc.rect(currentX, currentY - 5, nameWidth, rowHeight);
+            doc.text(name, currentX + 2, currentY);
+            currentX += nameWidth;
+            
+            // Individual assignment scores (already rounded in generateCombinedScoresheet)
+            data.scores.forEach(score => {
+                doc.rect(currentX, currentY - 5, scoreWidth, rowHeight);
+                doc.text(score.toString(), currentX + 2, currentY);
+                currentX += scoreWidth;
+            });
+            
+            // Total (already a sum of rounded scores)
+            doc.rect(currentX, currentY - 5, totalWidth, rowHeight);
+            doc.text(data.total.toString(), currentX + 2, currentY);
+            
+            currentY += rowHeight;
+        });
+        
+        doc.save('combined-scoresheet.pdf');
     }
 
     function viewSubmissions(assignmentId, title) {
@@ -335,18 +497,20 @@ include '../includes/header.php';
                             </thead>
                             <tbody>`;
 
-                if (response.students.length === 0) {
+                if (!response.students || response.students.length === 0) {
                     tableHtml += `
                         <tr>
                             <td colspan="5" class="text-center">No students found in this class</td>
                         </tr>`;
                 } else {
                     response.students.forEach(student => {
-                        let scoreDisplay = student.score ? 
-                            `<span class="badge badge-${getScoreClass((student.score/response.assignment.total_marks)*100)}">
-                                ${student.score}/${response.assignment.total_marks}
+                        const score = student.score || 0;
+                        const percentage = (score / response.assignment.total_marks) * 100;
+                        let scoreDisplay = student.submitted ? 
+                            `<span class="badge badge-${getScoreClass(percentage)}">
+                                ${score}/${response.assignment.total_marks}
                             </span>` : 
-                            '<span class="badge badge-secondary">No Score</span>';
+                            '<span class="badge badge-secondary">0</span>';
 
                         tableHtml += `
                             <tr>
@@ -367,7 +531,7 @@ include '../includes/header.php';
                 $('#submissionsList').html(tableHtml);
             },
             error: function(xhr, status, error) {
-                console.error('AJAX Error:', error); // Debug log
+                console.error('AJAX Error:', error);
                 $('#submissionsList').html(`
                     <div class="alert alert-danger">
                         <i class="fas fa-exclamation-circle mr-2"></i>

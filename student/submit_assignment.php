@@ -41,45 +41,43 @@ $is_past_due = strtotime($current_datetime) > strtotime($assignment['due_date'])
 <section class="content">
     <div class="container-fluid">
         <!-- Page Header -->
-        <div class="row mb-4">
-    <div class="col-md-12">
-        <div class="card border-0 shadow-sm">
-            <div class="card-body p-4">
-                <div class="d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-3">
-                    <!-- Assignment Title and Meta Info -->
-                    <div>
-                        <h5 class="card-title h4 text-primary m-3">
-                            <?= htmlspecialchars($assignment['title']) ?>
-                        </h5>
-                        <div class="d-flex flex-column flex-md-row text-muted small">
-                            <span class="d-flex align-items-center m-3">
-                                <i class="fas fa-book me-2"></i>
-                                <?= htmlspecialchars($assignment['subject_name']) ?>
-                            </span>
-                            <span class="d-flex align-items-center">
-                                <i class="fas fa-user me-2"></i>
-                                <?= htmlspecialchars($assignment['teacher_name']) ?>
-                            </span>
-                        </div>
-                    </div>
+        <!-- <div class="row mb-4">
+            <div class="col-md-12">
+                <div class="card border-0 shadow-sm">
+                    <div class="card-body p-4">
+                        <div class="d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-3">
+                            <div>
+                                <h5 class="card-title h4 text-primary m-3">
+                                    <?= htmlspecialchars($assignment['title']) ?>
+                                </h5>
+                                <div class="d-flex flex-column flex-md-row text-muted small">
+                                    <span class="d-flex align-items-center m-3">
+                                        <i class="fas fa-book me-2"></i>
+                                        <?= htmlspecialchars($assignment['subject_name']) ?>
+                                    </span>
+                                    <span class="d-flex align-items-center">
+                                        <i class="fas fa-user me-2"></i>
+                                        <?= htmlspecialchars($assignment['teacher_name']) ?>
+                                    </span>
+                                </div>
+                            </div>
 
-                    <!-- Due Date -->
-                    <div class="text-md-end mt-3 mt-md-0">
-                        <div class="small text-muted mb-2">Due Date</div>
-                        <div class="<?= $is_past_due ? 'text-danger' : 'text-dark' ?> fw-medium">
-                            <i class="far fa-clock me-2"></i>
-                            <?= date('M d, Y', strtotime($assignment['due_date'])) ?>
-                            <br class="d-md-none">
-                            <span class="small ms-md-2">
-                                <?= date('H:i', strtotime($assignment['due_date'])) ?> UTC
-                            </span>
+                            <div class="text-md-end mt-3 mt-md-0">
+                                <div class="small text-muted mb-2">Due Date</div>
+                                <div class="<?= $is_past_due ? 'text-danger' : 'text-dark' ?> fw-medium">
+                                    <i class="far fa-clock me-2"></i>
+                                    <?= date('M d, Y', strtotime($assignment['due_date'])) ?>
+                                    <br class="d-md-none">
+                                    <span class="small ms-md-2">
+                                        <?= date('H:i', strtotime($assignment['due_date'])) ?> UTC
+                                    </span>
+                                </div>
+                            </div>
                         </div>
                     </div>
                 </div>
             </div>
-        </div>
-    </div>
-</div>
+        </div> -->
 
         <div class="row">
             <!-- Assignment Details -->
@@ -172,15 +170,14 @@ $is_past_due = strtotime($current_datetime) > strtotime($assignment['due_date'])
                         <form id="submitAssignmentForm">
                             <div class="form-group">
                                 <label for="content">Your Answer:</label>
-                                <textarea 
-                                    name="content" 
-                                    id="content" 
-                                    class="form-control" 
-                                    rows="12" 
+                                <textarea
+                                    name="content"
+                                    id="content"
+                                    class="form-control"
+                                    rows="12"
                                     required
                                     <?= $is_past_due ? 'disabled' : '' ?>
-                                    placeholder="Type your answer here..."
-                                ></textarea>
+                                    placeholder="Type your answer here..."></textarea>
                             </div>
                             <div class="text-right">
                                 <button type="submit" class="btn btn-primary btn-lg" <?= $is_past_due ? 'disabled' : '' ?>>
@@ -220,116 +217,116 @@ $is_past_due = strtotime($current_datetime) > strtotime($assignment['due_date'])
 </section>
 
 <style>
-.grade-circle {
-    width: 150px;
-    height: 150px;
-    margin: 0 auto;
-}
+    .grade-circle {
+        width: 150px;
+        height: 150px;
+        margin: 0 auto;
+    }
 
-.progress-circle {
-    width: 100%;
-    height: 100%;
-    border-radius: 50%;
-    background: conic-gradient(#28a745 0%, #e9ecef 0%);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    position: relative;
-}
+    .progress-circle {
+        width: 100%;
+        height: 100%;
+        border-radius: 50%;
+        background: conic-gradient(#28a745 0%, #e9ecef 0%);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        position: relative;
+    }
 
-.progress-circle::before {
-    content: '';
-    position: absolute;
-    width: 80%;
-    height: 80%;
-    border-radius: 50%;
-    background: white;
-}
+    .progress-circle::before {
+        content: '';
+        position: absolute;
+        width: 80%;
+        height: 80%;
+        border-radius: 50%;
+        background: white;
+    }
 
-.progress-circle-value {
-    position: relative;
-    font-size: 2rem;
-    font-weight: bold;
-    color: #28a745;
-}
+    .progress-circle-value {
+        position: relative;
+        font-size: 2rem;
+        font-weight: bold;
+        color: #28a745;
+    }
 
-.timeline {
-    position: relative;
-    padding: 20px 0;
-}
+    .timeline {
+        position: relative;
+        padding: 20px 0;
+    }
 
-.timeline::before {
-    content: '';
-    position: absolute;
-    top: 0;
-    left: 31px;
-    height: 100%;
-    width: 4px;
-    background: #ddd;
-}
+    .timeline::before {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: 31px;
+        height: 100%;
+        width: 4px;
+        background: #ddd;
+    }
 
-.time-label {
-    margin-bottom: 1rem;
-}
+    .time-label {
+        margin-bottom: 1rem;
+    }
 
-.timeline-item {
-    margin-left: 60px;
-    margin-bottom: 15px;
-    padding: 10px;
-    border-radius: 4px;
-    background: #f8f9fa;
-}
+    .timeline-item {
+        margin-left: 60px;
+        margin-bottom: 15px;
+        padding: 10px;
+        border-radius: 4px;
+        background: #f8f9fa;
+    }
 
-.timeline > div > i {
-    width: 30px;
-    height: 30px;
-    font-size: 15px;
-    line-height: 30px;
-    position: absolute;
-    color: #fff;
-    text-align: center;
-    border-radius: 50%;
-    left: 18px;
-    top: 0;
-}
+    .timeline>div>i {
+        width: 30px;
+        height: 30px;
+        font-size: 15px;
+        line-height: 30px;
+        position: absolute;
+        color: #fff;
+        text-align: center;
+        border-radius: 50%;
+        left: 18px;
+        top: 0;
+    }
 
-.spinner-grow {
-    width: 2rem;
-    height: 2rem;
-}
+    .spinner-grow {
+        width: 2rem;
+        height: 2rem;
+    }
 
-.feedback-box {
-    max-height: 200px;
-    overflow-y: auto;
-}
+    .feedback-box {
+        max-height: 200px;
+        overflow-y: auto;
+    }
 </style>
 
 <script>
-document.getElementById('submitAssignmentForm').addEventListener('submit', function(e) {
-    e.preventDefault();
-    
-    // Show the marking animation
-    document.getElementById('markingAnimation').style.display = 'block';
-    document.getElementById('assignmentResult').style.display = 'none';
-    
-    // Get form data
-    const formData = new FormData();
-    formData.append('assignment_id', <?= $assignment_id ?>);
-    formData.append('content', document.getElementById('content').value);
-    
-    // Send AJAX request
-    fetch('submit_assignment_ajax.php', {
-        method: 'POST',
-        body: formData
-    })
-    .then(response => response.json())
-    .then(data => {
-        // Hide the marking animation
-        document.getElementById('markingAnimation').style.display = 'none';
-        
-        if (data.success) {
-            // Update the results section
-            document.getElementById('assignmentResult').innerHTML = `
+    document.getElementById('submitAssignmentForm').addEventListener('submit', function(e) {
+        e.preventDefault();
+
+        // Show the marking animation
+        document.getElementById('markingAnimation').style.display = 'block';
+        document.getElementById('assignmentResult').style.display = 'none';
+
+        // Get form data
+        const formData = new FormData();
+        formData.append('assignment_id', <?= $assignment_id ?>);
+        formData.append('content', document.getElementById('content').value);
+
+        // Send AJAX request
+        fetch('submit_assignment_ajax.php', {
+                method: 'POST',
+                body: formData
+            })
+            .then(response => response.json())
+            .then(data => {
+                // Hide the marking animation
+                document.getElementById('markingAnimation').style.display = 'none';
+
+                if (data.success) {
+                    // Update the results section
+                    document.getElementById('assignmentResult').innerHTML = `
                 <div class="card bg-gradient-success">
                     <div class="card-body">
                         <div class="row align-items-center">
@@ -363,22 +360,22 @@ document.getElementById('submitAssignmentForm').addEventListener('submit', funct
                     </div>
                 </div>
             `;
-            
-            // Show results
-            document.getElementById('assignmentResult').style.display = 'block';
-            
-            // Update the circular progress
-            const progressCircle = document.querySelector('.progress-circle');
-            progressCircle.style.background = `conic-gradient(#28a745 ${data.percentage}%, #e9ecef ${data.percentage}%)`;
-        } else {
-            alert(data.error || 'An error occurred while submitting your assignment.');
-        }
-    })
-    .catch(error => {
-        console.error('Error:', error);
-        alert('An error occurred while submitting your assignment.');
+
+                    // Show results
+                    document.getElementById('assignmentResult').style.display = 'block';
+
+                    // Update the circular progress
+                    const progressCircle = document.querySelector('.progress-circle');
+                    progressCircle.style.background = `conic-gradient(#28a745 ${data.percentage}%, #e9ecef ${data.percentage}%)`;
+                } else {
+                    alert(data.error || 'An error occurred while submitting your assignment.');
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                alert('An error occurred while submitting your assignment.');
+            });
     });
-});
 </script>
 
 <?php include '../includes/footer.php'; ?>

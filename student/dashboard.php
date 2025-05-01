@@ -61,7 +61,7 @@ $average_grade = round($stmt->fetchColumn(), 1) ?: 0;
 <section class="content">
     <div class="container-fluid">
         <!-- Student Info Box -->
-        <div class="row mb-4">
+        <!-- <div class="row mb-4">
             <div class="col-md-12">
                 <div class="info-box bg-gradient-info">
                     <span class="info-box-icon"><i class="fas fa-user-graduate"></i></span>
@@ -74,7 +74,7 @@ $average_grade = round($stmt->fetchColumn(), 1) ?: 0;
                     </div>
                 </div>
             </div>
-        </div>
+        </div> -->
 
         <!-- Statistics Cards -->
         <div class="row">

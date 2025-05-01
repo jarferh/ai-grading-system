@@ -102,7 +102,7 @@ unset($data); // Break the reference
 <section class="content">
     <div class="container-fluid">
         <!-- Student Info -->
-        <div class="row mb-4">
+        <!-- <div class="row mb-4">
             <div class="col-md-12">
                 <div class="info-box bg-info">
                     <span class="info-box-icon"><i class="fas fa-user-graduate"></i></span>
@@ -113,7 +113,7 @@ unset($data); // Break the reference
                     </div>
                 </div>
             </div>
-        </div>
+        </div> -->
 
         <!-- Statistics Cards -->
         <div class="row">

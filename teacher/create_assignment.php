@@ -91,7 +91,7 @@ include '../includes/header.php';
 <section class="content">
     <div class="container-fluid">
         <!-- Page Header -->
-        <div class="row mb-4">
+        <!-- <div class="row mb-4">
             <div class="col-md-12">
                 <div class="card bg-gradient-info">
                     <div class="card-body">
@@ -115,7 +115,7 @@ include '../includes/header.php';
                     </div>
                 </div>
             </div>
-        </div>
+        </div> -->
 
         <?php if (isset($messages['error'])): ?>
             <div class="alert alert-danger">
@@ -233,11 +233,11 @@ include '../includes/header.php';
                             </div>
                         </div>
 
-                        <div class="card-footer">
-                            <button type="submit" class="btn btn-primary btn-lg">
+                        <div class="card-footer d-flex flex-column flex-md-row">
+                            <button type="submit" class="btn btn-primary btn-lg mb-2 mb-md-0">
                                 <i class="fas fa-save mr-2"></i> Create Assignment
                             </button>
-                            <a href="dashboard.php" class="btn btn-secondary btn-lg float-right">
+                            <a href="dashboard.php" class="btn btn-secondary btn-lg ml-md-auto">
                                 <i class="fas fa-times mr-2"></i> Cancel
                             </a>
                         </div>
