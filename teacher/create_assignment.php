@@ -26,10 +26,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $stmt = $conn->prepare("
             INSERT INTO assignments (
                 title, description, subject_id, class_id, 
-                session_id, due_date, teacher_id
+                session_id, due_date, teacher_id, total_marks
             ) VALUES (
                 :title, :description, :subject_id, :class_id, 
-                :session_id, :due_date, :teacher_id
+                :session_id, :due_date, :teacher_id, :total_marks
             )
         ");
 
@@ -40,7 +40,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             'class_id' => $_POST['class_id'],
             'session_id' => $_POST['session_id'],
             'due_date' => $due_date,
-            'teacher_id' => $teacher_id
+            'teacher_id' => $teacher_id,
+            'total_marks' => $_POST['total_marks']
         ]);
 
         $conn->commit();
@@ -146,14 +147,14 @@ include '../includes/header.php';
                                 </label>
                                 <textarea name="description" id="description" 
                                           class="form-control" rows="6" required
-                                          placeholder="Enter detailed instructions for the assignment"></textarea>
+                                          placeholder="Enter detailed instructions for the assignment. Include total marks allocation."></textarea>
                                 <small class="form-text text-muted">
-                                    Provide clear and detailed instructions for students to understand the assignment requirements.
+                                    Provide clear instructions and mark distribution for each question/section.
                                 </small>
                             </div>
 
                             <div class="row">
-                                <div class="col-md-6">
+                                <div class="col-md-4">
                                     <div class="form-group">
                                         <label for="subject_id">
                                             <i class="fas fa-book mr-1"></i> Subject
@@ -169,7 +170,7 @@ include '../includes/header.php';
                                         </select>
                                     </div>
                                 </div>
-                                <div class="col-md-6">
+                                <div class="col-md-4">
                                     <div class="form-group">
                                         <label for="class_id">
                                             <i class="fas fa-users mr-1"></i> Class
@@ -186,10 +187,7 @@ include '../includes/header.php';
                                         </select>
                                     </div>
                                 </div>
-                            </div>
-
-                            <div class="row">
-                                <div class="col-md-6">
+                                <div class="col-md-4">
                                     <div class="form-group">
                                         <label for="session_id">
                                             <i class="fas fa-calendar-alt mr-1"></i> Session
@@ -205,21 +203,30 @@ include '../includes/header.php';
                                         </select>
                                     </div>
                                 </div>
+                            </div>
+
+                            <div class="row mt-3">
                                 <div class="col-md-6">
                                     <div class="form-group">
                                         <label>
-                                            <i class="fas fa-clock mr-1"></i> Due Date & Time
+                                            <i class="fas fa-calendar mr-1"></i> Due Date
                                         </label>
-                                        <div class="input-group">
-                                            <input type="date" name="due_date" 
-                                                   class="form-control" required
-                                                   min="<?= date('Y-m-d') ?>">
-                                            <input type="time" name="due_time" 
-                                                   class="form-control" required
-                                                   value="23:59">
-                                        </div>
+                                        <input type="date" name="due_date" 
+                                               class="form-control" required
+                                               min="<?= date('Y-m-d') ?>">
+                                    </div>
+                                </div>
+                                <div class="col-md-6">
+                                    <div class="form-group">
+                                        <label>
+                                            <i class="fas fa-star mr-1"></i> Total Marks
+                                        </label>
+                                        <input type="number" name="total_marks" 
+                                               class="form-control" required 
+                                               min="1" max="100" value="100"
+                                               placeholder="Enter total marks">
                                         <small class="form-text text-muted">
-                                            All times are in UTC
+                                            Maximum marks allowed: 100
                                         </small>
                                     </div>
                                 </div>
@@ -284,6 +291,7 @@ document.addEventListener('DOMContentLoaded', function() {
     $('#assignmentForm').on('submit', function(e) {
         const title = $('#title').val().trim();
         const description = $('#description').val().trim();
+        const totalMarks = parseInt($('#total_marks').val());
         
         if (title.length < 5) {
             e.preventDefault();
@@ -294,6 +302,12 @@ document.addEventListener('DOMContentLoaded', function() {
         if (description.length < 20) {
             e.preventDefault();
             alert('Assignment description must be at least 20 characters long.');
+            return false;
+        }
+
+        if (isNaN(totalMarks) || totalMarks < 1 || totalMarks > 100) {
+            e.preventDefault();
+            alert('Total marks must be between 1 and 100.');
             return false;
         }
     });

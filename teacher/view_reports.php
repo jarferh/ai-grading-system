@@ -26,25 +26,24 @@ $score_filter = $_GET['score_range'] ?? '';
 $class_filter = $_GET['class_id'] ?? '';
 $subject_filter = $_GET['subject_id'] ?? '';
 
-// Base query with additional fields
+// Modified base query to get assignments instead of submissions
 $query = "
     SELECT 
+        a.id,
         a.title,
         a.description,
-        u.full_name,
-        u.email,
+        a.due_date,
+        a.total_marks,
         c.name as class_name,
         s.name as subject_name,
-        g.score,
-        g.remarks,
-        sub.submission_date,
-        sub.content as submission_content
-    FROM grades g
-    JOIN submissions sub ON g.submission_id = sub.id
-    JOIN assignments a ON sub.assignment_id = a.id
-    JOIN users u ON sub.student_id = u.id
+        COUNT(DISTINCT sub.id) as submission_count,
+        COUNT(DISTINCT g.id) as graded_count,
+        COALESCE(AVG(g.score), 0) as average_score
+    FROM assignments a
     JOIN classes c ON a.class_id = c.id
     JOIN subjects s ON a.subject_id = s.id
+    LEFT JOIN submissions sub ON a.id = sub.assignment_id
+    LEFT JOIN grades g ON sub.id = g.submission_id
     WHERE a.teacher_id = :teacher_id
 ";
 
@@ -54,13 +53,13 @@ $params = ['teacher_id' => $teacher_id];
 if ($date_filter) {
     switch ($date_filter) {
         case 'today':
-            $query .= " AND DATE(sub.submission_date) = CURDATE()";
+            $query .= " AND DATE(a.due_date) = CURDATE()";
             break;
         case 'week':
-            $query .= " AND sub.submission_date >= DATE_SUB(CURDATE(), INTERVAL 1 WEEK)";
+            $query .= " AND a.due_date >= DATE_SUB(CURDATE(), INTERVAL 1 WEEK)";
             break;
         case 'month':
-            $query .= " AND sub.submission_date >= DATE_SUB(CURDATE(), INTERVAL 1 MONTH)";
+            $query .= " AND a.due_date >= DATE_SUB(CURDATE(), INTERVAL 1 MONTH)";
             break;
     }
 }
@@ -68,13 +67,13 @@ if ($date_filter) {
 if ($score_filter) {
     switch ($score_filter) {
         case 'above90':
-            $query .= " AND g.score >= 90";
+            $query .= " AND COALESCE(AVG(g.score), 0) >= 90";
             break;
         case '70to89':
-            $query .= " AND g.score BETWEEN 70 AND 89";
+            $query .= " AND COALESCE(AVG(g.score), 0) BETWEEN 70 AND 89";
             break;
         case 'below70':
-            $query .= " AND g.score < 70";
+            $query .= " AND COALESCE(AVG(g.score), 0) < 70";
             break;
     }
 }
@@ -89,83 +88,15 @@ if ($subject_filter) {
     $params['subject_id'] = $subject_filter;
 }
 
-$query .= " ORDER BY sub.submission_date DESC";
+$query .= " GROUP BY a.id ORDER BY a.due_date DESC";
 
 $stmt = $conn->prepare($query);
 $stmt->execute($params);
 $reports = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-// Calculate statistics
-$stats = [
-    'total_submissions' => count($reports),
-    'average_score' => 0,
-    'high_performers' => 0,
-    'low_performers' => 0
-];
-
-if (!empty($reports)) {
-    $total_score = array_sum(array_column($reports, 'score'));
-    $stats['average_score'] = $total_score / count($reports);
-    $stats['high_performers'] = count(array_filter($reports, function ($r) {
-        return $r['score'] >= 90;
-    }));
-    $stats['low_performers'] = count(array_filter($reports, function ($r) {
-        return $r['score'] < 70;
-    }));
-}
-
 // Fetch classes and subjects for filters
 $classes = $conn->query("SELECT * FROM classes ORDER BY name")->fetchAll(PDO::FETCH_ASSOC);
 $subjects = $conn->query("SELECT * FROM subjects ORDER BY name")->fetchAll(PDO::FETCH_ASSOC);
-
-// Prepare data for charts
-$chart_data = [
-    'by_student' => [],
-    'by_class' => [],
-    'by_subject' => [],
-    'score_distribution' => [
-        '90-100' => 0,
-        '80-89' => 0,
-        '70-79' => 0,
-        '60-69' => 0,
-        'Below 60' => 0
-    ]
-];
-
-foreach ($reports as $report) {
-    // Student averages
-    if (!isset($chart_data['by_student'][$report['full_name']])) {
-        $chart_data['by_student'][$report['full_name']] = ['scores' => [], 'average' => 0];
-    }
-    $chart_data['by_student'][$report['full_name']]['scores'][] = $report['score'];
-
-    // Class averages
-    if (!isset($chart_data['by_class'][$report['class_name']])) {
-        $chart_data['by_class'][$report['class_name']] = ['scores' => [], 'average' => 0];
-    }
-    $chart_data['by_class'][$report['class_name']]['scores'][] = $report['score'];
-
-    // Subject averages
-    if (!isset($chart_data['by_subject'][$report['subject_name']])) {
-        $chart_data['by_subject'][$report['subject_name']] = ['scores' => [], 'average' => 0];
-    }
-    $chart_data['by_subject'][$report['subject_name']]['scores'][] = $report['score'];
-
-    // Score distribution
-    if ($report['score'] >= 90) $chart_data['score_distribution']['90-100']++;
-    elseif ($report['score'] >= 80) $chart_data['score_distribution']['80-89']++;
-    elseif ($report['score'] >= 70) $chart_data['score_distribution']['70-79']++;
-    elseif ($report['score'] >= 60) $chart_data['score_distribution']['60-69']++;
-    else $chart_data['score_distribution']['Below 60']++;
-}
-
-// Calculate averages
-foreach (['by_student', 'by_class', 'by_subject'] as $key) {
-    foreach ($chart_data[$key] as &$data) {
-        $data['average'] = array_sum($data['scores']) / count($data['scores']);
-    }
-    unset($data);
-}
 
 $pageTitle = "View Reports";
 include '../includes/header.php';
@@ -180,6 +111,11 @@ include '../includes/header.php';
                     <i class="fas fa-filter mr-2"></i>
                     Filter Reports
                 </h3>
+                <!-- <div class="card-tools">
+                    <a href="generate_scoresheet.php" class="btn btn-success btn-sm">
+                        <i class="fas fa-file-alt mr-2"></i>Generate Scoresheet
+                    </a>
+                </div> -->
             </div>
             <div class="card-body">
                 <form method="GET" class="row">
@@ -226,46 +162,50 @@ include '../includes/header.php';
             </div>
         </div>
 
-        <!-- Reports Table (Initially Hidden) -->
-        <div class="card" id="reportsSection" style="display: <?= ($subject_filter || $class_filter) ? 'block' : 'none' ?>;">
+        <!-- Assignments Table -->
+        <div class="card" id="assignmentsCard">
             <div class="card-header">
                 <h3 class="card-title">
-                    <i class="fas fa-table mr-2"></i>
-                    Score Sheet
+                    <i class="fas fa-tasks mr-2"></i>
+                    Assignment List
                 </h3>
-                <div class="card-tools">
-                    <button type="button" class="btn btn-sm btn-success" onclick="exportToExcel()">
-                        <i class="fas fa-file-excel mr-2"></i>Export
-                    </button>
-                </div>
             </div>
             <div class="card-body table-responsive">
                 <?php if (!empty($reports)): ?>
-                    <table id="reportsTable" class="table table-bordered table-hover">
+                    <table id="assignmentsTable" class="table table-bordered table-hover">
                         <thead>
                             <tr>
-                                <th>Student</th>
-                                <th>Assignment</th>
-                                <th>Score</th>
-                                <th>Submission Date</th>
+                                <th>Title</th>
+                                <th>Class</th>
+                                <th>Subject</th>
+                                <th>Due Date</th>
+                                <th>Submissions</th>
+                                <th>Average Score</th>
                                 <th>Actions</th>
                             </tr>
                         </thead>
                         <tbody>
-                            <?php foreach ($reports as $report): ?>
+                            <?php foreach ($reports as $assignment): ?>
                                 <tr>
-                                    <td><?= htmlspecialchars($report['full_name']) ?></td>
-                                    <td><?= htmlspecialchars($report['title']) ?></td>
+                                    <td><?= htmlspecialchars($assignment['title']) ?></td>
+                                    <td><?= htmlspecialchars($assignment['class_name']) ?></td>
+                                    <td><?= htmlspecialchars($assignment['subject_name']) ?></td>
+                                    <td><?= date('M d, Y', strtotime($assignment['due_date'])) ?></td>
                                     <td>
-                                        <span class="badge badge-<?= getScoreClass($report['score']) ?>">
-                                            <?= number_format($report['score'], 1) ?>%
+                                        <span class="badge badge-info">
+                                            <?= $assignment['submission_count'] ?> / 
+                                            <?= $assignment['total_students'] ?? '?' ?>
                                         </span>
                                     </td>
-                                    <td><?= date('M d, Y', strtotime($report['submission_date'])) ?></td>
                                     <td>
-                                        <button type="button" class="btn btn-sm btn-info"
-                                            onclick="viewDetails(<?= htmlspecialchars(json_encode($report)) ?>)">
-                                            <i class="fas fa-eye"></i>
+                                        <span class="badge badge-<?= getScoreClass($assignment['average_score']) ?>">
+                                            <?= number_format($assignment['average_score'], 1) ?>%
+                                        </span>
+                                    </td>
+                                    <td>
+                                        <button type="button" class="btn btn-sm btn-primary"
+                                                onclick="viewSubmissions(<?= $assignment['id'] ?>, '<?= htmlspecialchars($assignment['title']) ?>')">
+                                            <i class="fas fa-list"></i> View Submissions
                                         </button>
                                     </td>
                                 </tr>
@@ -275,15 +215,37 @@ include '../includes/header.php';
                 <?php else: ?>
                     <div class="alert alert-info">
                         <i class="fas fa-info-circle mr-2"></i>
-                        Select a subject and class to view the score sheet.
+                        No assignments found for the selected filters.
                     </div>
                 <?php endif; ?>
             </div>
         </div>
 
+        <!-- Submissions Table (Initially Hidden) -->
+        <div class="card" id="submissionsCard" style="display: none;">
+            <div class="card-header">
+                <h3 class="card-title">
+                    <i class="fas fa-file-alt mr-2"></i>
+                    <span id="submissionTitle">Submissions</span>
+                </h3>
+                <div class="card-tools">
+                    <button type="button" class="btn btn-success btn-sm mr-2" onclick="exportToPDF()">
+                        <i class="fas fa-file-pdf mr-1"></i> Export PDF
+                    </button>
+                    <button type="button" class="btn btn-default btn-sm" onclick="showAssignments()">
+                        <i class="fas fa-arrow-left mr-1"></i> Back to Assignments
+                    </button>
+                </div>
+            </div>
+            <div class="card-body">
+                <div id="submissionsList">
+                    <!-- Submissions will be loaded here -->
+                </div>
+            </div>
+        </div>
+
         <?php
-        function getScoreClass($score)
-        {
+        function getScoreClass($score) {
             if ($score >= 90) return 'success';
             if ($score >= 80) return 'info';
             if ($score >= 70) return 'warning';
@@ -294,93 +256,210 @@ include '../includes/header.php';
     </div>
 </section>
 
-<!-- Details Modal -->
-<div class="modal fade" id="detailsModal" tabindex="-1">
-    <div class="modal-dialog modal-lg">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h5 class="modal-title">Submission Details</h5>
-                <button type="button" class="close" data-dismiss="modal">
-                    <span>&times;</span>
-                </button>
-            </div>
-            <div class="modal-body">
-                <div class="row">
-                    <div class="col-md-6">
-                        <h6>Assignment Information</h6>
-                        <p id="modalTitle" class="font-weight-bold"></p>
-                        <p id="modalDescription" class="text-muted"></p>
-                    </div>
-                    <div class="col-md-6">
-                        <h6>Student Information</h6>
-                        <p id="modalStudent"></p>
-                        <p id="modalClass"></p>
-                    </div>
-                </div>
-                <hr>
-                <div class="row">
-                    <div class="col-md-12">
-                        <h6>Student's Answer</h6>
-                        <div id="modalContent" class="p-3 bg-light rounded"></div>
-                    </div>
-                </div>
-                <hr>
-                <div class="row">
-                    <div class="col-md-12">
-                        <h6>Feedback</h6>
-                        <div id="modalRemarks" class="p-3 border-left border-info"></div>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </div>
-</div>
-
-<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-<script src="https://cdn.datatables.net/1.11.5/js/jquery.dataTables.min.js"></script>
-<script src="https://cdn.datatables.net/1.11.5/js/dataTables.bootstrap4.min.js"></script>
-<script src="https://cdn.datatables.net/buttons/2.2.2/js/dataTables.buttons.min.js"></script>
-<script src="https://cdn.datatables.net/buttons/2.2.2/js/buttons.html5.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.1.3/jszip.min.js"></script>
+<!-- Add jsPDF and html2canvas libraries -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 
 <script>
-     $(document).ready(function() {
-            // Initialize Select2
-            $('.select2').select2({
-                theme: 'bootstrap4',
-                placeholder: 'Select an option'
-            });
-
-            // Initialize DataTable only if there are reports
-            if ($('#reportsTable tbody tr').length > 0) {
-                $('#reportsTable').DataTable({
-                    "paging": true,
-                    "lengthChange": false,
-                    "searching": true,
-                    "ordering": true,
-                    "info": true,
-                    "autoWidth": false,
-                    "responsive": true,
-                    "pageLength": 10
-                });
-            }
+    $(document).ready(function() {
+        // Initialize Select2
+        $('.select2').select2({
+            theme: 'bootstrap4',
+            placeholder: 'Select an option'
         });
 
-    // View Details Function
-    function viewDetails(report) {
-        $('#modalTitle').text(report.title);
-        $('#modalDescription').text(report.description);
-        $('#modalStudent').html(`<strong>Name:</strong> ${report.full_name}<br><strong>Email:</strong> ${report.email}`);
-        $('#modalClass').html(`<strong>Class:</strong> ${report.class_name}<br><strong>Subject:</strong> ${report.subject_name}`);
-        $('#modalContent').text(report.submission_content);
-        $('#modalRemarks').text(report.remarks);
-        $('#detailsModal').modal('show');
+        // Initialize DataTable only if there are reports
+        if ($('#assignmentsTable tbody tr').length > 0) {
+            $('#assignmentsTable').DataTable({
+                "paging": true,
+                "lengthChange": false,
+                "searching": true,
+                "ordering": true,
+                "info": true,
+                "autoWidth": false,
+                "responsive": true,
+                "pageLength": 10
+            });
+        }
+    });
+
+    // Add this function before using it in viewSubmissions
+    function getScoreClass(score) {
+        score = parseFloat(score);
+        if (score >= 90) return 'success';
+        if (score >= 80) return 'info';
+        if (score >= 70) return 'warning';
+        return 'danger';
     }
 
-    // Export to Excel Function
-    function exportToExcel() {
-        const table = $('#reportsTable').DataTable();
-        table.button('.buttons-excel').trigger();
+    function viewSubmissions(assignmentId, title) {
+        // Show loading state
+        $('#submissionsList').html('<div class="text-center py-4"><i class="fas fa-spinner fa-spin fa-2x"></i><br>Loading submissions...</div>');
+        $('#submissionTitle').text('Submissions for: ' + title);
+        
+        // Hide assignments, show submissions
+        $('#assignmentsCard').hide();
+        $('#submissionsCard').show();
+
+        // Fetch submissions with error handling
+        $.ajax({
+            url: 'ajax/get_submissions.php',
+            method: 'GET',
+            data: { assignment_id: assignmentId },
+            dataType: 'json',
+            success: function(response) {
+                console.log('Response:', response); // Debug log
+
+                if (!response.success) {
+                    $('#submissionsList').html(`
+                        <div class="alert alert-danger">
+                            <i class="fas fa-exclamation-circle mr-2"></i>
+                            ${response.error || 'Failed to load submissions'}
+                        </div>
+                    `);
+                    return;
+                }
+
+                // Create submissions table
+                let tableHtml = `
+                    <div class="table-responsive">
+                        <table class="table table-bordered table-hover">
+                            <thead>
+                                <tr>
+                                    <th>Student Name</th>
+                                    <th>Email</th>
+                                    <th>Status</th>
+                                    <th>Submission Date</th>
+                                    <th>Score (out of ${response.assignment.total_marks})</th>
+                                </tr>
+                            </thead>
+                            <tbody>`;
+
+                if (response.students.length === 0) {
+                    tableHtml += `
+                        <tr>
+                            <td colspan="5" class="text-center">No students found in this class</td>
+                        </tr>`;
+                } else {
+                    response.students.forEach(student => {
+                        let scoreDisplay = student.score ? 
+                            `<span class="badge badge-${getScoreClass((student.score/response.assignment.total_marks)*100)}">
+                                ${student.score}/${response.assignment.total_marks}
+                            </span>` : 
+                            '<span class="badge badge-secondary">No Score</span>';
+
+                        tableHtml += `
+                            <tr>
+                                <td>${student.full_name}</td>
+                                <td>${student.email}</td>
+                                <td>
+                                    ${student.submitted ? 
+                                        '<span class="badge badge-success">Submitted</span>' : 
+                                        '<span class="badge badge-warning">Not Submitted</span>'}
+                                </td>
+                                <td>${student.submission_date || 'N/A'}</td>
+                                <td>${scoreDisplay}</td>
+                            </tr>`;
+                    });
+                }
+
+                tableHtml += '</tbody></table></div>';
+                $('#submissionsList').html(tableHtml);
+            },
+            error: function(xhr, status, error) {
+                console.error('AJAX Error:', error); // Debug log
+                $('#submissionsList').html(`
+                    <div class="alert alert-danger">
+                        <i class="fas fa-exclamation-circle mr-2"></i>
+                        Error loading submissions. Status: ${status}, Error: ${error}
+                    </div>
+                `);
+            }
+        });
+    }
+
+    function showAssignments() {
+        $('#submissionsCard').hide();
+        $('#assignmentsCard').show();
+    }
+
+    function exportToPDF() {
+        const { jsPDF } = window.jspdf;
+        const doc = new jsPDF();
+        
+        // Get the assignment title and total marks
+        const title = document.getElementById('submissionTitle').innerText;
+        const table = document.querySelector('#submissionsList table');
+        const rows = table.querySelectorAll('tbody tr');
+        
+        // Get total marks from title
+        const totalMarksMatch = title.match(/out of (\d+)/);
+        const assignmentTotalMarks = totalMarksMatch ? totalMarksMatch[1] : '100';
+        
+        // Set up PDF
+        doc.setFontSize(16);
+        doc.text(title, 14, 15);
+        
+        doc.setFontSize(10);
+        doc.text('Generated on: ' + new Date().toLocaleString(), 14, 22);
+        
+        // Table settings
+        const startX = 14;
+        const startY = 35;
+        const colWidths = [90, 30, 30]; // Name, Score, Total
+        const rowHeight = 8;
+        let currentY = startY;
+        
+        // Draw table headers
+        doc.setFontSize(12);
+        doc.setLineWidth(0.2);
+        
+        // Header cells
+        doc.rect(startX, currentY - 5, colWidths[0], rowHeight); // Name cell
+        doc.rect(startX + colWidths[0], currentY - 5, colWidths[1], rowHeight); // Score cell
+        doc.rect(startX + colWidths[0] + colWidths[1], currentY - 5, colWidths[2], rowHeight); // Total cell
+        
+        // Header texts
+        doc.text('Student Name', startX + 2, currentY);
+        doc.text('Score', startX + colWidths[0] + 2, currentY);
+        doc.text('Total', startX + colWidths[0] + colWidths[1] + 2, currentY);
+        
+        currentY += rowHeight;
+        
+        // Add data rows
+        rows.forEach(row => {
+            if (currentY > 280) {
+                doc.addPage();
+                currentY = 20;
+            }
+            
+            const name = row.cells[0]?.textContent?.trim() || 'N/A';
+            
+            // Get score information
+            let score = '0';
+            const scoreCell = row.cells[4];
+            if (scoreCell) {
+                const scoreElement = scoreCell.querySelector('span');
+                if (scoreElement && scoreElement.textContent.includes('/')) {
+                    score = scoreElement.textContent.split('/')[0].trim() || '0';
+                }
+            }
+            
+            // Draw row cells
+            doc.rect(startX, currentY - 5, colWidths[0], rowHeight); // Name cell
+            doc.rect(startX + colWidths[0], currentY - 5, colWidths[1], rowHeight); // Score cell
+            doc.rect(startX + colWidths[0] + colWidths[1], currentY - 5, colWidths[2], rowHeight); // Total cell
+            
+            // Write cell contents
+            doc.text(name, startX + 2, currentY);
+            doc.text(score, startX + colWidths[0] + 2, currentY);
+            doc.text(assignmentTotalMarks, startX + colWidths[0] + colWidths[1] + 2, currentY);
+            
+            currentY += rowHeight;
+        });
+        
+        // Save the PDF
+        doc.save('submissions-scoresheet.pdf');
     }
 </script>
 
